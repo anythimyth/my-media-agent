@@ -1,7 +1,9 @@
 import os
 import subprocess
 import requests
+import time
 from google import genai
+from google.genai import types
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from rembg import remove
 
@@ -13,6 +15,7 @@ FILE_ID = os.getenv("FILE_ID")
 USER_PROMPT = os.getenv("USER_PROMPT")
 MEDIA_TYPE = os.getenv("MEDIA_TYPE", "photo")
 
+# Inisialisasi client GenAI
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 def send_telegram_message(text):
@@ -44,31 +47,29 @@ def upload_telegram_file(file_path, media_type):
         raise Exception(f"Gagal mengunggah ke Telegram: {res.text}")
 
 def change_background_ai(input_file, output_file, bg_prompt):
-    # 1. Hapus background objek utama
     input_img = Image.open(input_file).convert("RGBA")
     fg_img = remove(input_img)
     
-    # 2. Jika ada HF_TOKEN, generate background AI via SDXL/FLUX
     if HF_TOKEN:
         API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
         headers = {"Authorization": f"Bearer {HF_TOKEN}"}
         
-        response = requests.post(API_URL, headers=headers, json={"inputs": bg_prompt})
-        if response.status_code == 200:
-            bg_path = "ai_bg.jpg"
-            with open(bg_path, "wb") as f:
-                f.write(response.content)
-            bg_img = Image.open(bg_path).resize(input_img.size).convert("RGBA")
-            bg_img.paste(fg_img, (0, 0), fg_img)
-            bg_img.convert("RGB").save(output_file, quality=90, optimize=True)
-            return
+        try:
+            response = requests.post(API_URL, headers=headers, json={"inputs": bg_prompt}, timeout=30)
+            if response.status_code == 200:
+                bg_path = "ai_bg.jpg"
+                with open(bg_path, "wb") as f:
+                    f.write(response.content)
+                bg_img = Image.open(bg_path).resize(input_img.size).convert("RGBA")
+                bg_img.paste(fg_img, (0, 0), fg_img)
+                bg_img.convert("RGB").save(output_file, quality=90, optimize=True)
+                return
+        except Exception as e:
+            print(f"HF Error/Timeout ({e}), fallback ke background putih.")
 
-    # Fallback jika tanpa HF_TOKEN: Gunakan warna background putih/transparan bersih
     background = Image.new("RGBA", input_img.size, (255, 255, 255, 255))
     background.paste(fg_img, (0, 0), fg_img)
     background.convert("RGB").save(output_file, quality=90, optimize=True)
-
-import time
 
 def get_photo_command_from_llm(user_prompt, input_file, output_file):
     system_prompt = (
@@ -84,7 +85,6 @@ def get_photo_command_from_llm(user_prompt, input_file, output_file):
         "HANYA berikan baris kode Python murni tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
     )
 
-    # Menjadikan gemini-3.8-flash sebagai pilihan utama, diikuti model cadangan jika 503 Overload
     models_to_try = [
         'gemini-3.8-flash',
         'gemini-3.6-flash',
@@ -92,20 +92,23 @@ def get_photo_command_from_llm(user_prompt, input_file, output_file):
         'gemini-1.5-flash'
     ]
 
+    # Mengatasi Connection Reset / Network Drop
+    max_retries = 3
     for model_name in models_to_try:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=system_prompt,
-            )
-            cmd = response.text.strip()
-            return cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
-        except Exception as e:
-            print(f"Model {model_name} terkena error/busy ({e}). Mencoba model cadangan berikutnya...")
-            time.sleep(1)
-            continue
+        for attempt in range(max_retries):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=system_prompt,
+                )
+                cmd = response.text.strip()
+                return cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
+            except Exception as e:
+                print(f"Model {model_name} attempt {attempt+1} gagal ({e}). Retry dalam 2 detik...")
+                time.sleep(2)
+                continue
 
-    raise Exception("Semua server Gemini AI sedang sangat sibuk. Silakan coba lagi beberapa saat lagi.")
+    raise Exception("Gagal terhubung ke Google AI API karena gangguan koneksi. Silakan coba kirim ulang.")
 
 def main():
     try:
@@ -117,7 +120,6 @@ def main():
         
         download_telegram_file(FILE_ID, input_file)
         
-        # Fitur Ganti Background AI
         if "ganti background" in USER_PROMPT.lower() or "ubah background" in USER_PROMPT.lower():
             send_telegram_message("🎨 Memotong objek dan memproses background AI baru...")
             bg_prompt = USER_PROMPT.lower().replace("ganti background", "").replace("ubah background", "").strip()
@@ -125,7 +127,6 @@ def main():
                 bg_prompt = "studio professional background with soft lighting"
             change_background_ai(input_file, output_file, bg_prompt)
         else:
-            # Fitur Editan Profesional Umum (Pillow + Rembg)
             command = get_photo_command_from_llm(USER_PROMPT, input_file, output_file)
             print(f"Executing command: {command}")
             
