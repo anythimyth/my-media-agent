@@ -38,13 +38,13 @@ def upload_telegram_file(file_path, media_type):
 
 def get_ffmpeg_command_from_llm(user_prompt, input_file, output_file):
     system_instruction = (
-        "Kamu adalah pakar FFmpeg. Tugasmu menerjemahkan instruksi user menjadi satu perintah bash FFmpeg yang valid. "
+        "Kamu adalah pakar FFmpeg dan Pillow. Tugasmu menerjemahkan instruksi user menjadi satu perintah bash FFmpeg atau skrip Python yang valid. "
         f"Input file selalu bernama '{input_file}' dan output file bernama '{output_file}'. "
         "HANYA kembalikan perintah FFmpeg murni tanpa format markdown codeblock atau teks penjelasan tambahan."
     )
     
     response = client.chat.completions.create(
-        model="llama-3.1-70b-versatile",  # <--- Diubah ke versi Llama 3.1 yang stabil
+        model="llama3-8b-8192",  # <-- Pakai model ini (sangat cepat, stabil, & gratis)
         messages=[
             {"role": "system", "content": system_instruction},
             {"role": "user", "content": user_prompt}
