@@ -3,7 +3,6 @@ import subprocess
 import requests
 import time
 from google import genai
-from google.genai import types
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from rembg import remove
 
@@ -15,7 +14,6 @@ FILE_ID = os.getenv("FILE_ID")
 USER_PROMPT = os.getenv("USER_PROMPT")
 MEDIA_TYPE = os.getenv("MEDIA_TYPE", "photo")
 
-# Inisialisasi client GenAI
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 def send_telegram_message(text):
@@ -46,55 +44,68 @@ def upload_telegram_file(file_path, media_type):
     if not res.ok:
         raise Exception(f"Gagal mengunggah ke Telegram: {res.text}")
 
-def change_background_ai(input_file, output_file, bg_prompt):
-    input_img = Image.open(input_file).convert("RGBA")
-    fg_img = remove(input_img)
-    
+def advanced_image_enhance(input_file, output_file, user_prompt):
+    # Metode Image-to-Image menggunakan Hugging Face untuk manipulasi total
     if HF_TOKEN:
-        API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+        # Menggunakan model Image‑to‑Image AI yang handal untuk manipulasi pemandangan & pencahayaan
+        API_URL = "https://router.huggingface.co/hf-inference/v1/models/stabilityai/stable-diffusion-xl-refiner-1.0"
         headers = {"Authorization": f"Bearer {HF_TOKEN}"}
         
+        # Sempurnakan prompt agar model mengerti persis arah manipulasinya
+        refined_prompt = (
+            f"Vivid color graded photo, high dynamic range (HDR), bright sunny day with beautiful blue sky and fluffy white clouds, "
+            f"sharp focus, professional photography, natural lighting, highly detailed warung scene: {user_prompt}"
+        )
+        
         try:
-            response = requests.post(API_URL, headers=headers, json={"inputs": bg_prompt}, timeout=30)
+            with open(input_file, "rb") as f:
+                image_data = f.read()
+            
+            # Request Image-to-Image
+            payload = {
+                "inputs": refined_prompt,
+                "image": image_data,
+                "strength": 0.35 # Mengatur agar tidak terlalu merubah bentuk asli tapi merubah pencahayaan/langit secara masif
+            }
+            
+            response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
             if response.status_code == 200:
-                bg_path = "ai_bg.jpg"
-                with open(bg_path, "wb") as f:
+                with open(output_file, "wb") as f:
                     f.write(response.content)
-                bg_img = Image.open(bg_path).resize(input_img.size).convert("RGBA")
-                bg_img.paste(fg_img, (0, 0), fg_img)
-                bg_img.convert("RGB").save(output_file, quality=90, optimize=True)
                 return
         except Exception as e:
-            print(f"HF Error/Timeout ({e}), fallback ke background putih.")
+            print(f"HF Image-to-Image Error: {e}, beralih ke local enhancement...")
 
-    background = Image.new("RGBA", input_img.size, (255, 255, 255, 255))
-    background.paste(fg_img, (0, 0), fg_img)
-    background.convert("RGB").save(output_file, quality=90, optimize=True)
+    # Fallback/Metode Lokal jika tanpa HF_TOKEN (Peningkatan warna ekstrim agar terlihat perubahannya)
+    img = Image.open(input_file).convert("RGB")
+    
+    # Keras kerasan di Color, Contrast, dan Sharpness
+    img = ImageEnhance.Color(img).enhance(1.6)      # Sangat Vivid
+    img = ImageEnhance.Contrast(img).enhance(1.35)   # Kontras tinggi
+    img = ImageEnhance.Sharpness(img).enhance(1.8)  # Tajam / HD
+    img = ImageEnhance.Brightness(img).enhance(1.05) # Sedikit diterangkan
+    
+    # Menambahkan filter penajaman ekstra
+    img = img.filter(ImageFilter.DETAIL)
+    
+    img.save(output_file, quality=95, optimize=True)
 
 def get_photo_command_from_llm(user_prompt, input_file, output_file):
+    # Digunakan untuk prompt biasa yang tidak mengaktifkan pipeline vivid/advanced
     system_prompt = (
         f"Kamu adalah pakar Python Pillow profesional. Buat skrip Python murni untuk memproses foto '{input_file}' menjadi '{output_file}'. "
         f"Instruksi user: '{user_prompt}'.\n\n"
-        "ATURAN COLOR GRADING / VIVID EDITING:\n"
-        "1. Buka gambar: 'img = Image.open(\"{input_file}\").convert(\"RGB\")'\n"
-        "2. Jika user minta warna cerah/HD/profesional: tingkatkan Color/Saturasi (1.4 - 1.6), Contrast (1.2 - 1.3), Sharpness (1.5 - 1.8), dan Brightness (1.1).\n"
-        "3. Contoh: \n"
-        "   img = ImageEnhance.Color(img).enhance(1.5)\n"
-        "   img = ImageEnhance.Contrast(img).enhance(1.25)\n"
-        "   img = ImageEnhance.Sharpness(img).enhance(1.6)\n"
-        "   img = ImageEnhance.Brightness(img).enhance(1.1)\n"
-        "4. Selalu simpan di akhir: 'img.save(\"{output_file}\", quality=95, optimize=True)'\n"
+        "ATURAN SINTAKS PILLOW WAJIB:\n"
+        "1. Selalu buka gambar: 'img = Image.open(\"{input_file}\").convert(\"RGB\")'\n"
+        "2. Peningkatan kualitas/penajaman: 'img = ImageEnhance.Sharpness(img).enhance(1.8)'\n"
+        "3. Warna/Kontras/Brightness: 'img = ImageEnhance.Color(img).enhance(1.5)', 'img = ImageEnhance.Contrast(img).enhance(1.25)'\n"
+        "4. Pembesaran/Resize: Maksimal resolusi 3840x2160 dengan 'Image.Resampling.LANCZOS' agar file <10MB.\n"
+        "5. Hapus Background biasa: 'img = remove(img)'\n"
+        "6. Selalu simpan di akhir: 'img.save(\"{output_file}\", quality=95, optimize=True)'\n"
         "HANYA berikan baris kode Python murni tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
     )
 
-    models_to_try = [
-        'gemini-3.8-flash',
-        'gemini-3.6-flash',
-        'gemini-2.5-flash',
-        'gemini-1.5-flash'
-    ]
-
-    # Mengatasi Connection Reset / Network Drop
+    models_to_try = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']
     max_retries = 3
     for model_name in models_to_try:
         for attempt in range(max_retries):
@@ -106,11 +117,10 @@ def get_photo_command_from_llm(user_prompt, input_file, output_file):
                 cmd = response.text.strip()
                 return cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
             except Exception as e:
-                print(f"Model {model_name} attempt {attempt+1} gagal ({e}). Retry dalam 2 detik...")
+                print(f"Model {model_name} attempt {attempt+1} gagal ({e}). Retry...")
                 time.sleep(2)
                 continue
-
-    raise Exception("Gagal terhubung ke Google AI API karena gangguan koneksi. Silakan coba kirim ulang.")
+    raise Exception("Gagal terhubung ke Google AI API.")
 
 def main():
     try:
@@ -122,13 +132,13 @@ def main():
         
         download_telegram_file(FILE_ID, input_file)
         
-        if "ganti background" in USER_PROMPT.lower() or "ubah background" in USER_PROMPT.lower():
-            send_telegram_message("🎨 Memotong objek dan memproses background AI baru...")
-            bg_prompt = USER_PROMPT.lower().replace("ganti background", "").replace("ubah background", "").strip()
-            if not bg_prompt:
-                bg_prompt = "studio professional background with soft lighting"
-            change_background_ai(input_file, output_file, bg_prompt)
+        # Logika khusus untuk prompt estetik, vivid, cerah, HDR (memanggil Advanced Image-to-Image)
+        trigger_words = ["cerah", "vivid", "kontras", "hdr", "biru", "profesional", "hd", "4k"]
+        if MEDIA_TYPE == "photo" and any(word in USER_PROMPT.lower() for word in trigger_words):
+            send_telegram_message("🎨 Memproses Advanced Image-to-Image dengan manipulasi langit & pencahayaan...")
+            advanced_image_enhance(input_file, output_file, USER_PROMPT)
         else:
+            # Fitur Editan Umum / Standar
             command = get_photo_command_from_llm(USER_PROMPT, input_file, output_file)
             print(f"Executing command: {command}")
             
