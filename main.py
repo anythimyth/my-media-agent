@@ -45,23 +45,62 @@ def upload_telegram_file(file_path, media_type):
         raise Exception(f"Gagal mengunggah ke Telegram: {res.text}")
 
 def advanced_image_enhance(input_file, output_file, user_prompt):
+    # Kami manfaatkan Gemini 2.5 Flash untuk menganalisis dan menginstruksikan modifikasi visual
+    # yang luar biasa akurat berdasarkan foto aslimu.
+    try:
+        img_input = Image.open(input_file).convert("RGB")
+        
+        # Kirim foto asli ke Gemini untuk mendeskripsikan ulang & mendesain modifikasi dalam resolusi tinggi
+        prompt_enhancer = (
+            "Analisislah foto ini. Sebagai editor profesional, buat skrip Python murni menggunakan Pillow yang akan: "
+            "1. Meningkatkan pencahayaan secara drastis (HDR look) dengan kurva yang cerah.\n"
+            "2. Mengubah bagian langit yang mendung menjadi biru kaya dengan awan cerah natural secara digital menggunakan manipulasi ImageEnhance dan filtering.\n"
+            "3. Meningkatkan saturasi warna tanaman hijau dan kebiruan meja/tenda secara ekstrim agar sangat cerah (vivid).\n"
+            "4. Pertahankan keaslian bentuk gelas dan bakso, namun buat detailnya sangat tajam.\n"
+            f"Gunakan file input '{input_file}' dan simpan hasilnya di '{output_file}'. "
+            "Ingat, berikan output HANYA baris kode python murni, tanpa penjelasan, tanpa ``` atau markdown."
+        )
+
+        # Gemini 2.5 Flash memiliki kemampuan visual gila-gilaan yang gratis
+        response = client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=[img_input, prompt_enhancer]
+        )
+        
+        script_code = response.text.strip()
+        script_code = script_code.replace("```python", "").replace("```", "").strip()
+        
+        print(f"Executing AI-generated visual enhancement code: {script_code}")
+        
+        # Eksekusi skrip grading visual hasil rekomendasi Gemini
+        exec_scope = {
+            "Image": Image,
+            "ImageEnhance": ImageEnhance,
+            "ImageFilter": ImageFilter,
+            "ImageOps": ImageOps,
+            "remove": remove
+        }
+        exec(script_code, exec_scope)
+        return
+        
+    except Exception as e:
+        print(f"Proses AI Visual gagal ({e}), menggunakan fallback manual...")
+
+    # Fallback yang benar-benar kuat untuk memaksa warna biru dan cerah keluar
     img = Image.open(input_file).convert("RGB")
     
-    # 1. Samakan resolusi jika perlu, tanpa nambah filter tajam berlebihan
-    # 2. Naikkan saturasi warna secara pas (tidak berlebihan)
-    img = ImageEnhance.Color(img).enhance(1.35)
+    # Gunakan ImageOps untuk menyamakan warna & Auto-Contrast yang sangat agresif
+    img = ImageOps.autocontrast(img, cutoff=0.5)
     
-    # 3. Pengaturan kontras & brightness yang halus (mencegah gosong/pucat)
-    img = ImageEnhance.Contrast(img).enhance(1.15)
-    img = ImageEnhance.Brightness(img).enhance(1.03)
+    # 1. Naikkan Exposure (Kecerahan)
+    img = ImageEnhance.Brightness(img).enhance(1.12)
     
-    # 4. Auto-equalize tone secara lembut (simulasi pencahayaan HDR natural)
-    # Ini menaikkan bayangan gelap di area bakso tanpa merusak area terang
-    img_eq = ImageOps.equalize(img)
-    img = Image.blend(img, img_eq, alpha=0.25)
+    # 2. Naikkan warna/Saturasi gila-gilaan (memancing warna langit & tenda keluar)
+    img = ImageEnhance.Color(img).enhance(1.8)
     
-    # 5. Penajaman halus murni tanpa garis kasar (Detail filter saja)
-    img = img.filter(ImageFilter.DETAIL)
+    # 3. Kontras tajam yang seimbang (HDR)
+    img = ImageEnhance.Contrast(img).enhance(1.3)
+    img = ImageEnhance.Sharpness(img).enhance(1.9)
     
     img.save(output_file, quality=95, optimize=True)
 
