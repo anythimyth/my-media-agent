@@ -45,65 +45,23 @@ def upload_telegram_file(file_path, media_type):
         raise Exception(f"Gagal mengunggah ke Telegram: {res.text}")
 
 def advanced_image_enhance(input_file, output_file, user_prompt):
-    # Metode Image-to-Image menggunakan Hugging Face
-    if HF_TOKEN:
-        # Menggunakan model base SDXL yang jauh lebih agresif dalam memanipulasi pemandangan
-        API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
-        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-        
-        # Format prompt yang meyakinkan AI untuk merombak total cuaca dan warna secara masif
-        refined_prompt = (
-            f"A magnificent cinematic photo, extremely vivid and rich color grading, HDR 4k, "
-            f"bright sunny day with gorgeous deep blue sky, fluffy white clouds, warm natural sunlight illuminating the scene, "
-            f"high contrast, highly detailed, professional color correction: {user_prompt}"
-        )
-        
-        try:
-            # Hugging Face image-to-image membutuhkan format multipart/form-data agar parameter 'image' dan 'strength' terbaca dengan benar
-            with open(input_file, "rb") as f:
-                img_bytes = f.read()
-                
-            # Kita gunakan file upload biner murni dengan prompt disematkan di query/header 
-            # atau menggunakan standard payload parameters jika multi-part didukung.
-            # Alternatif paling aman tanpa payload error: Kirim gambar dengan headers khusus
-            response = requests.post(
-                API_URL, 
-                headers=headers, 
-                files={
-                    "image": ("image.jpg", img_bytes, "image/jpeg")
-                },
-                data={
-                    "inputs": refined_prompt,
-                    "strength": "0.55"  # Ditingkatkan dari 0.35 agar AI lebih berani merombak warna langit & pencahayaan
-                },
-                timeout=65
-            )
-            
-            if response.status_code == 200 and len(response.content) > 10000:
-                with open(output_file, "wb") as f:
-                    f.write(response.content)
-                return
-            else:
-                print(f"HF Server returned status {response.status_code}. Melakukan fallback ke lokal...")
-        except Exception as e:
-            print(f"HF Image-to-Image gagal ({e}), beralih ke local enhancement...")
-
-    # Fallback/Metode Lokal: Optimasi visual dengan algoritma Pillow yang JAUH lebih agresif
-    # (Menggunakan ImageOps & Multi-Pass Contrast/Color Enhancement agar pasti ada perubahan)
     img = Image.open(input_file).convert("RGB")
     
-    # 1. Normalisasi & Auto-Contrast otomatis untuk mendongkrak area gelap (shadow/HDR simulation)
-    img = ImageOps.autocontrast(img, cutoff=1)
+    # 1. Samakan resolusi jika perlu, tanpa nambah filter tajam berlebihan
+    # 2. Naikkan saturasi warna secara pas (tidak berlebihan)
+    img = ImageEnhance.Color(img).enhance(1.35)
     
-    # 2. Dongkrak Color & Contrast secara agresif
-    img = ImageEnhance.Color(img).enhance(1.75)       # Sangat-sangat Vivid & berwarna
-    img = ImageEnhance.Contrast(img).enhance(1.4)     # Kontras dramatis & dalam
-    img = ImageEnhance.Brightness(img).enhance(1.08)   # Sedikit diterangkan agar detail gelap terlihat
-    img = ImageEnhance.Sharpness(img).enhance(1.9)    # Sangat tajam
+    # 3. Pengaturan kontras & brightness yang halus (mencegah gosong/pucat)
+    img = ImageEnhance.Contrast(img).enhance(1.15)
+    img = ImageEnhance.Brightness(img).enhance(1.03)
     
-    # 3. Lapisan filter detail & edge enhancement
+    # 4. Auto-equalize tone secara lembut (simulasi pencahayaan HDR natural)
+    # Ini menaikkan bayangan gelap di area bakso tanpa merusak area terang
+    img_eq = ImageOps.equalize(img)
+    img = Image.blend(img, img_eq, alpha=0.25)
+    
+    # 5. Penajaman halus murni tanpa garis kasar (Detail filter saja)
     img = img.filter(ImageFilter.DETAIL)
-    img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)   # Memberi kesan 4K/HDR bergaris tajam
     
     img.save(output_file, quality=95, optimize=True)
 
