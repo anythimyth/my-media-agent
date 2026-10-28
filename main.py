@@ -40,8 +40,8 @@ def get_ffmpeg_command_from_llm(user_prompt, input_file, output_file):
         "HANYA kembalikan perintah FFmpeg murni satu baris tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
     )
     
-    # Gunakan gemini-2.5-flash sebagai standar aktif
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    # Menggunakan ID model Gemini Flash yang aktif & stabil
+    model = genai.GenerativeModel('gemini-3.8-flash')
     response = model.generate_content(f"{system_instruction}\n\nInstruksi: {user_prompt}")
     
     cmd = response.text.strip()
