@@ -3,6 +3,7 @@ import subprocess
 import requests
 from google import genai
 from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -85,8 +86,13 @@ def main():
         print(f"Executing command: {command}")
         
         if MEDIA_TYPE == "photo":
-            # Eksekusi skrip Pillow untuk foto
-            exec_scope = {"Image": Image}
+            # Eksekusi skrip Pillow untuk foto dengan modul lengkap
+            exec_scope = {
+                "Image": Image,
+                "ImageEnhance": ImageEnhance,
+                "ImageFilter": ImageFilter,
+                "ImageOps": ImageOps
+            }
             exec(command, exec_scope)
         else:
             # Eksekusi FFmpeg untuk video
