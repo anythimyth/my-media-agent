@@ -62,7 +62,7 @@ def get_command_from_llm(user_prompt, input_file, output_file, media_type):
 
     try:
         response = client.models.generate_content(
-            model='gemini-3.1-pro',
+            model='gemini-4-argon',
             contents=prompt,
         )
         cmd = response.text.strip()
