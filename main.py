@@ -2,7 +2,6 @@ import os
 import subprocess
 import requests
 from google import genai
-from PIL import Image
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -38,42 +37,33 @@ def upload_telegram_file(file_path, media_type):
 def get_command_from_llm(user_prompt, input_file, output_file, media_type):
     if media_type == "photo":
         prompt = (
-            f"Kamu adalah pakar Python Pillow (PIL). Buat skrip Python 1 baris untuk memproses foto '{input_file}' menjadi '{output_file}'. "
-            f"Instruksi user: '{user_prompt}'. "
-            "ATURAN PENTING PIL:\n"
-            "1. JANGAN PANGGAL 'img.enhance()'! Gunakan kelas seperti ImageEnhance.Sharpness(img).enhance(factor) atau ImageEnhance.Color(img).enhance(factor).\n"
-            "2. Buka gambar dengan img = Image.open('{input_file}').convert('RGB').\n"
-            "3. Simpan hasil akhir ke '{output_file}'.\n"
-            f"Contoh format balasan: img = Image.open('{input_file}').convert('RGB'); img = ImageEnhance.Sharpness(img).enhance(1.5); img = ImageEnhance.Contrast(img).enhance(1.2); img.save('{output_file}')\n"
-            "HANYA balaskan baris kode python murni tanpa markdown."
+            f"Kamu adalah pakar Python Pillow. Buat skrip Python yang memproses foto '{input_file}' menjadi '{output_file}'. "
+            f"Instruksi user: '{user_prompt}'.\n"
+            "ATURAN PENTING PILLOW:\n"
+            "1. Jangan pernah panggil img.enhance(). Gunakan kelas seperti ImageEnhance.Sharpness(img).enhance(1.5) atau ImageEnhance.Color(img).enhance(1.2).\n"
+            "2. Jangan panggil img.save() di dalam kelas ImageEnhance. Objek penajam harus di-enhance dulu baru disimpan, misal: img = ImageEnhance.Sharpness(img).enhance(1.5)\n"
+            "3. Pastikan kode dibuka dengan 'img = Image.open(\"{input_file}\")' dan diakhiri dengan 'img.save(\"{output_file}\")'.\n"
+            "HANYA berikan baris kode Python murni tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
         )
     else:
         prompt = (
             f"Kamu adalah pakar FFmpeg. Tugasmu membuat 1 baris perintah bash FFmpeg untuk file input '{input_file}' dan output '{output_file}'. "
-            f"Instruksi user: '{user_prompt}'. "
-            "HANYA balaskan perintah FFmpeg murni tanpa markdown."
+            f"Perintah instruksi user: '{user_prompt}'. "
+            "HANYA kembalikan perintah FFmpeg murni tanpa markdown."
         )
 
-    models_to_try = [
-        'gemini-3.5-flash-lite',
-        'gemini-3.6-flash',
-        'gemini-3.1-pro'
-    ]
+    # Menggunakan model Gemini Flash standar
+    try:
+        response = client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=prompt,
+        )
+        cmd = response.text.strip()
+        cmd = cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
+        return cmd
+    except Exception as e:
+        raise Exception(f"Gagal memanggil API Gemini: {str(e)}")
 
-    for model_name in models_to_try:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-            )
-            cmd = response.text.strip()
-            cmd = cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
-            return cmd
-        except Exception as e:
-            print(f"Model {model_name} busy ({e}), mencoba model cadangan...")
-            continue
-            
-    raise Exception("Semua server AI sedang sibuk. Silakan coba beberapa saat lagi.")
 def main():
     try:
         send_telegram_message("⚡ GitHub Actions menerima tugas. Memproses media...")
@@ -87,14 +77,12 @@ def main():
         command = get_command_from_llm(USER_PROMPT, input_file, output_file, MEDIA_TYPE)
         print(f"Executing command: {command}")
         
-if MEDIA_TYPE == "photo":
+        if MEDIA_TYPE == "photo":
             exec_scope = {
                 "Image": Image,
                 "ImageEnhance": ImageEnhance,
                 "ImageFilter": ImageFilter,
-                "ImageOps": ImageOps,
-                "input_file": input_file,
-                "output_file": output_file
+                "ImageOps": ImageOps
             }
             exec(command, exec_scope)
         else:
