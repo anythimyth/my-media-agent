@@ -40,13 +40,13 @@ def get_ffmpeg_command_from_llm(user_prompt, input_file, output_file):
         "HANYA kembalikan perintah FFmpeg murni satu baris tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
     )
     
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Gunakan nama model resmi yang aktif
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
     response = model.generate_content(f"{system_instruction}\n\nInstruksi: {user_prompt}")
     
     cmd = response.text.strip()
     cmd = cmd.replace("```bash", "").replace("```", "").strip()
     return cmd
-
 def main():
     try:
         send_telegram_message("⚡ GitHub Actions menerima tugas. Memproses media...")
