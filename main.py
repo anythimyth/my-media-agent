@@ -75,13 +75,15 @@ def get_photo_command_from_llm(user_prompt, input_file, output_file):
     system_prompt = (
         f"Kamu adalah pakar Python Pillow profesional. Buat skrip Python murni untuk memproses foto '{input_file}' menjadi '{output_file}'. "
         f"Instruksi user: '{user_prompt}'.\n\n"
-        "ATURAN SINTAKS PILLOW WAJIB:\n"
-        "1. Selalu buka gambar: 'img = Image.open(\"{input_file}\").convert(\"RGB\")'\n"
-        "2. Peningkatan kualitas/penajaman: 'img = ImageEnhance.Sharpness(img).enhance(1.5)'\n"
-        "3. Warna/Kontras/Brightness: 'img = ImageEnhance.Color(img).enhance(1.2)', 'img = ImageEnhance.Contrast(img).enhance(1.1)'\n"
-        "4. Pembesaran/Resize: Maksimal resolusi 3840x2160 dengan 'Image.Resampling.LANCZOS' agar file <10MB.\n"
-        "5. Hapus Background biasa: 'img = remove(img)'\n"
-        "6. Selalu simpan di akhir: 'img.save(\"{output_file}\", quality=90, optimize=True)'\n"
+        "ATURAN COLOR GRADING / VIVID EDITING:\n"
+        "1. Buka gambar: 'img = Image.open(\"{input_file}\").convert(\"RGB\")'\n"
+        "2. Jika user minta warna cerah/HD/profesional: tingkatkan Color/Saturasi (1.4 - 1.6), Contrast (1.2 - 1.3), Sharpness (1.5 - 1.8), dan Brightness (1.1).\n"
+        "3. Contoh: \n"
+        "   img = ImageEnhance.Color(img).enhance(1.5)\n"
+        "   img = ImageEnhance.Contrast(img).enhance(1.25)\n"
+        "   img = ImageEnhance.Sharpness(img).enhance(1.6)\n"
+        "   img = ImageEnhance.Brightness(img).enhance(1.1)\n"
+        "4. Selalu simpan di akhir: 'img.save(\"{output_file}\", quality=95, optimize=True)'\n"
         "HANYA berikan baris kode Python murni tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
     )
 
