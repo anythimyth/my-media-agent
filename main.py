@@ -1,7 +1,8 @@
 import os
 import subprocess
 import requests
-import google.generativeai as genai
+from google import genai
+from PIL import Image
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -10,7 +11,7 @@ FILE_ID = os.getenv("FILE_ID")
 USER_PROMPT = os.getenv("USER_PROMPT")
 MEDIA_TYPE = os.getenv("MEDIA_TYPE", "video")
 
-genai.configure(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -33,20 +34,30 @@ def upload_telegram_file(file_path, media_type):
         files = {media_type: f}
         requests.post(url, data={"chat_id": CHAT_ID}, files=files)
 
-def get_ffmpeg_command_from_llm(user_prompt, input_file, output_file):
-    system_instruction = (
-        "Kamu adalah pakar FFmpeg. Tugasmu menerjemahkan instruksi user menjadi satu perintah bash FFmpeg yang valid. "
-        f"Input file selalu bernama '{input_file}' dan output file bernama '{output_file}'. "
-        "HANYA kembalikan perintah FFmpeg murni satu baris tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
+def get_command_from_llm(user_prompt, input_file, output_file, media_type):
+    if media_type == "photo":
+        prompt = (
+            f"Kamu adalah pakar Python Pillow. Buat skrip Python 1 baris untuk memproses foto '{input_file}' menjadi '{output_file}'. "
+            f"Perintah instruksi user: '{user_prompt}'. "
+            f"Contoh format balasan: Image.open('{input_file}').resize((1080, 1080)).save('{output_file}') "
+            "HANYA balaskan baris kode python murni tanpa markdown."
+        )
+    else:
+        prompt = (
+            f"Kamu adalah pakar FFmpeg. Tugasmu membuat 1 baris perintah bash FFmpeg untuk file input '{input_file}' dan output '{output_file}'. "
+            f"Perintah instruksi user: '{user_prompt}'. "
+            "HANYA balaskan perintah FFmpeg murni tanpa markdown."
+        )
+
+    response = client.models.generate_content(
+        model='gemini-3.8-flash',
+        contents=prompt,
     )
     
-    # Menggunakan ID model Gemini Flash yang aktif & stabil
-    model = genai.GenerativeModel('gemini-3.8-flash')
-    response = model.generate_content(f"{system_instruction}\n\nInstruksi: {user_prompt}")
-    
     cmd = response.text.strip()
-    cmd = cmd.replace("```bash", "").replace("```", "").strip()
+    cmd = cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
     return cmd
+
 def main():
     try:
         send_telegram_message("⚡ GitHub Actions menerima tugas. Memproses media...")
@@ -57,11 +68,17 @@ def main():
         
         download_telegram_file(FILE_ID, input_file)
         
-        command = get_ffmpeg_command_from_llm(USER_PROMPT, input_file, output_file)
+        command = get_command_from_llm(USER_PROMPT, input_file, output_file, MEDIA_TYPE)
         print(f"Executing command: {command}")
         
-        subprocess.run(command, shell=True, check=True)
-        
+        if MEDIA_TYPE == "photo":
+            # Eksekusi skrip Pillow untuk foto
+            exec_scope = {"Image": Image}
+            exec(command, exec_scope)
+        else:
+            # Eksekusi FFmpeg untuk video
+            subprocess.run(command, shell=True, check=True)
+            
         upload_telegram_file(output_file, MEDIA_TYPE)
         send_telegram_message("✅ Selesai! Hasil edit sudah dikirim di atas.")
         
