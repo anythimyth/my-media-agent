@@ -38,19 +38,22 @@ def upload_telegram_file(file_path, media_type):
 def get_command_from_llm(user_prompt, input_file, output_file, media_type):
     if media_type == "photo":
         prompt = (
-            f"Kamu adalah pakar Python Pillow. Buat skrip Python 1 baris untuk memproses foto '{input_file}' menjadi '{output_file}'. "
-            f"Perintah instruksi user: '{user_prompt}'. "
-            f"Contoh format balasan: Image.open('{input_file}').resize((1080, 1080)).save('{output_file}') "
+            f"Kamu adalah pakar Python Pillow (PIL). Buat skrip Python 1 baris untuk memproses foto '{input_file}' menjadi '{output_file}'. "
+            f"Instruksi user: '{user_prompt}'. "
+            "ATURAN PENTING PIL:\n"
+            "1. JANGAN PANGGAL 'img.enhance()'! Gunakan kelas seperti ImageEnhance.Sharpness(img).enhance(factor) atau ImageEnhance.Color(img).enhance(factor).\n"
+            "2. Buka gambar dengan img = Image.open('{input_file}').convert('RGB').\n"
+            "3. Simpan hasil akhir ke '{output_file}'.\n"
+            f"Contoh format balasan: img = Image.open('{input_file}').convert('RGB'); img = ImageEnhance.Sharpness(img).enhance(1.5); img = ImageEnhance.Contrast(img).enhance(1.2); img.save('{output_file}')\n"
             "HANYA balaskan baris kode python murni tanpa markdown."
         )
     else:
         prompt = (
             f"Kamu adalah pakar FFmpeg. Tugasmu membuat 1 baris perintah bash FFmpeg untuk file input '{input_file}' dan output '{output_file}'. "
-            f"Perintah instruksi user: '{user_prompt}'. "
+            f"Instruksi user: '{user_prompt}'. "
             "HANYA balaskan perintah FFmpeg murni tanpa markdown."
         )
 
-    # Daftar model cadangan jika model utama overload (503)
     models_to_try = [
         'gemini-3.5-flash-lite',
         'gemini-3.6-flash',
@@ -67,11 +70,10 @@ def get_command_from_llm(user_prompt, input_file, output_file, media_type):
             cmd = cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
             return cmd
         except Exception as e:
-            print(f"Model {model_name} gagal/busy ({e}), mencoba model cadangan berikutnya...")
+            print(f"Model {model_name} busy ({e}), mencoba model cadangan...")
             continue
             
     raise Exception("Semua server AI sedang sibuk. Silakan coba beberapa saat lagi.")
-
 def main():
     try:
         send_telegram_message("⚡ GitHub Actions menerima tugas. Memproses media...")
@@ -85,17 +87,17 @@ def main():
         command = get_command_from_llm(USER_PROMPT, input_file, output_file, MEDIA_TYPE)
         print(f"Executing command: {command}")
         
-        if MEDIA_TYPE == "photo":
-            # Eksekusi skrip Pillow untuk foto dengan modul lengkap
+if MEDIA_TYPE == "photo":
             exec_scope = {
                 "Image": Image,
                 "ImageEnhance": ImageEnhance,
                 "ImageFilter": ImageFilter,
-                "ImageOps": ImageOps
+                "ImageOps": ImageOps,
+                "input_file": input_file,
+                "output_file": output_file
             }
             exec(command, exec_scope)
         else:
-            # Eksekusi FFmpeg untuk video
             subprocess.run(command, shell=True, check=True)
             
         upload_telegram_file(output_file, MEDIA_TYPE)
