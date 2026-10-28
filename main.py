@@ -38,19 +38,51 @@ def upload_telegram_file(file_path, media_type):
 
 def get_ffmpeg_command_from_llm(user_prompt, input_file, output_file):
     system_instruction = (
-        "Kamu adalah pakar FFmpeg dan Pillow. Tugasmu menerjemahkan instruksi user menjadi satu perintah bash FFmpeg atau skrip Python yang valid. "
+        "Kamu adalah pakar FFmpeg. Tugasmu menerjemahkan instruksi user menjadi satu perintah bash FFmpeg yang valid. "
         f"Input file selalu bernama '{input_file}' dan output file bernama '{output_file}'. "
-        "HANYA kembalikan perintah FFmpeg murni tanpa format markdown codeblock atau teks penjelasan tambahan."
+        "HANYA kembalikan perintah FFmpeg murni satu baris tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
     )
     
     response = client.chat.completions.create(
-        model="llama3-8b-8192",  # <-- Pakai model ini (sangat cepat, stabil, & gratis)
+        model="llama3-8b-8192",
         messages=[
             {"role": "system", "content": system_instruction},
             {"role": "user", "content": user_prompt}
         ]
     )
-    return response.choices[0].message.content.strip()
+    cmd = response.choices[0].message.content.strip()
+    
+    # Pembersihan otomatis jika LLM mengembalikan format ```bash atau ```
+    cmd = cmd.replace("```bash", "").replace("```", "").strip()
+    return cmd
+
+def main():
+    try:
+        send_telegram_message("⚡ GitHub Actions menerima tugas. Memproses media...")
+        
+        ext = ".mp4" if MEDIA_TYPE == "video" else ".jpg"
+        input_file = f"input{ext}"
+        output_file = f"output{ext}"
+        
+        # 1. Download media dari Telegram
+        download_telegram_file(FILE_ID, input_file)
+        
+        # 2. Dapatkan perintah FFmpeg dari Groq LLM
+        command = get_ffmpeg_command_from_llm(USER_PROMPT, input_file, output_file)
+        print(f"Executing command: {command}")
+        
+        # 3. Eksekusi FFmpeg di Runner GitHub
+        subprocess.run(command, shell=True, check=True)
+        
+        # 4. Kirim hasil balik ke Telegram HP
+        upload_telegram_file(output_file, MEDIA_TYPE)
+        send_telegram_message("✅ Selesai! Hasil edit sudah dikirim di atas.")
+        
+    except Exception as e:
+        send_telegram_message(f"❌ Terjadi kesalahan saat memproses: {str(e)}")
+
+if __name__ == "__main__":
+    main()
 
 def main():
     try:
