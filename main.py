@@ -47,10 +47,10 @@ def get_command_from_llm(user_prompt, input_file, output_file, media_type):
         prompt = (
             f"Kamu adalah pakar Python Pillow. Buat skrip Python yang memproses foto '{input_file}' menjadi '{output_file}'. "
             f"Instruksi user: '{user_prompt}'.\n"
-            "ATURAN PENTING PILLOW:\n"
-            "1. Jangan pernah panggil img.enhance(). Gunakan kelas seperti ImageEnhance.Sharpness(img).enhance(1.5) atau ImageEnhance.Color(img).enhance(1.2).\n"
-            "2. Jangan panggil img.save() di dalam kelas ImageEnhance. Objek penajam harus di-enhance dulu baru disimpan, misal: img = ImageEnhance.Sharpness(img).enhance(1.5)\n"
-            "3. Pastikan kode dibuka dengan 'img = Image.open(\"{input_file}\")' dan diakhiri dengan 'img.save(\"{output_file}\")'.\n"
+            "BATASAN & ATURAN WAJIB PILOW:\n"
+            "1. Jika user meminta resolusi tinggi (8K/4K/HD), MAKSIMALKAN resolusi di 3840x2160 agar ukuran file tidak melebihi batas 10MB Telegram.\n"
+            "2. Jangan panggil img.enhance() langsung dari img. Gunakan ImageEnhance.Sharpness(img).enhance(1.5) atau ImageEnhance.Color(img).enhance(1.2).\n"
+            "3. Pastikan kode dibuka dengan 'img = Image.open(\"{input_file}\")' dan diakhiri dengan 'img.save(\"{output_file}\", quality=85, optimize=True)'.\n"
             "HANYA berikan baris kode Python murni tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
         )
     else:
@@ -60,7 +60,6 @@ def get_command_from_llm(user_prompt, input_file, output_file, media_type):
             "HANYA kembalikan perintah FFmpeg murni tanpa markdown."
         )
 
-    # Menggunakan model Gemini Flash standar
     try:
         response = client.models.generate_content(
             model='gemini-3.6-flash',
