@@ -68,6 +68,8 @@ def change_background_ai(input_file, output_file, bg_prompt):
     background.paste(fg_img, (0, 0), fg_img)
     background.convert("RGB").save(output_file, quality=90, optimize=True)
 
+import time
+
 def get_photo_command_from_llm(user_prompt, input_file, output_file):
     system_prompt = (
         f"Kamu adalah pakar Python Pillow profesional. Buat skrip Python murni untuk memproses foto '{input_file}' menjadi '{output_file}'. "
@@ -82,12 +84,28 @@ def get_photo_command_from_llm(user_prompt, input_file, output_file):
         "HANYA berikan baris kode Python murni tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
     )
 
-    response = client.models.generate_content(
-        model='gemini-3.8-flash',
-        contents=system_prompt,
-    )
-    cmd = response.text.strip()
-    return cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
+    # Menjadikan gemini-3.8-flash sebagai pilihan utama, diikuti model cadangan jika 503 Overload
+    models_to_try = [
+        'gemini-3.8-flash',
+        'gemini-3.6-flash',
+        'gemini-2.5-flash',
+        'gemini-1.5-flash'
+    ]
+
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=system_prompt,
+            )
+            cmd = response.text.strip()
+            return cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
+        except Exception as e:
+            print(f"Model {model_name} terkena error/busy ({e}). Mencoba model cadangan berikutnya...")
+            time.sleep(1)
+            continue
+
+    raise Exception("Semua server Gemini AI sedang sangat sibuk. Silakan coba lagi beberapa saat lagi.")
 
 def main():
     try:
