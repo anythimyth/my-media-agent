@@ -44,7 +44,7 @@ def get_ffmpeg_command_from_llm(user_prompt, input_file, output_file):
     )
     
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-70b-versatile",  # <--- Diubah ke versi Llama 3.1 yang stabil
         messages=[
             {"role": "system", "content": system_instruction},
             {"role": "user", "content": user_prompt}
