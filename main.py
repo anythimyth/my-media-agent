@@ -1,29 +1,26 @@
 import os
 import subprocess
 import requests
-from groq import Groq
+import google.generativeai as genai
 
-# Ambil environment variables dari GitHub Secrets & Payload
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 FILE_ID = os.getenv("FILE_ID")
 USER_PROMPT = os.getenv("USER_PROMPT")
 MEDIA_TYPE = os.getenv("MEDIA_TYPE", "video")
 
-client = Groq(api_key=GROQ_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
 
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     requests.post(url, json={"chat_id": CHAT_ID, "text": text})
 
 def download_telegram_file(file_id, output_path):
-    # Dapatkan file path dari Telegram API
     res = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={file_id}").json()
     file_path = res["result"]["file_path"]
     file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
     
-    # Download file
     r = requests.get(file_url, stream=True)
     with open(output_path, "wb") as f:
         for chunk in r.iter_content(chunk_size=8192):
@@ -43,16 +40,10 @@ def get_ffmpeg_command_from_llm(user_prompt, input_file, output_file):
         "HANYA kembalikan perintah FFmpeg murni satu baris tanpa markdown, tanpa code block, dan tanpa penjelasan teks."
     )
     
-    response = client.chat.completions.create(
-        model="llama3-8b-8192",
-        messages=[
-            {"role": "system", "content": system_instruction},
-            {"role": "user", "content": user_prompt}
-        ]
-    )
-    cmd = response.choices[0].message.content.strip()
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    response = model.generate_content(f"{system_instruction}\n\nInstruksi: {user_prompt}")
     
-    # Pembersihan otomatis jika LLM mengembalikan format ```bash atau ```
+    cmd = response.text.strip()
     cmd = cmd.replace("```bash", "").replace("```", "").strip()
     return cmd
 
@@ -64,45 +55,13 @@ def main():
         input_file = f"input{ext}"
         output_file = f"output{ext}"
         
-        # 1. Download media dari Telegram
         download_telegram_file(FILE_ID, input_file)
         
-        # 2. Dapatkan perintah FFmpeg dari Groq LLM
         command = get_ffmpeg_command_from_llm(USER_PROMPT, input_file, output_file)
         print(f"Executing command: {command}")
         
-        # 3. Eksekusi FFmpeg di Runner GitHub
         subprocess.run(command, shell=True, check=True)
         
-        # 4. Kirim hasil balik ke Telegram HP
-        upload_telegram_file(output_file, MEDIA_TYPE)
-        send_telegram_message("✅ Selesai! Hasil edit sudah dikirim di atas.")
-        
-    except Exception as e:
-        send_telegram_message(f"❌ Terjadi kesalahan saat memproses: {str(e)}")
-
-if __name__ == "__main__":
-    main()
-
-def main():
-    try:
-        send_telegram_message("⚡ GitHub Actions menerima tugas. Memproses media...")
-        
-        ext = ".mp4" if MEDIA_TYPE == "video" else ".jpg"
-        input_file = f"input{ext}"
-        output_file = f"output{ext}"
-        
-        # 1. Download media dari Telegram
-        download_telegram_file(FILE_ID, input_file)
-        
-        # 2. Dapatkan perintah FFmpeg dari Groq LLM
-        command = get_ffmpeg_command_from_llm(USER_PROMPT, input_file, output_file)
-        print(f"Executing command: {command}")
-        
-        # 3. Eksekusi FFmpeg di Runner GitHub
-        subprocess.run(command, shell=True, check=True)
-        
-        # 4. Kirim hasil balik ke Telegram HP
         upload_telegram_file(output_file, MEDIA_TYPE)
         send_telegram_message("✅ Selesai! Hasil edit sudah dikirim di atas.")
         
