@@ -30,9 +30,17 @@ def download_telegram_file(file_id, output_path):
 def upload_telegram_file(file_path, media_type):
     endpoint = "sendVideo" if media_type == "video" else "sendPhoto"
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{endpoint}"
+    
+    # Memastikan file hasil edit benar-benar ada sebelum dikirim
+    if not os.path.exists(file_path):
+        raise Exception(f"File hasil edit ({file_path}) tidak ditemukan!")
+
     with open(file_path, "rb") as f:
         files = {media_type: f}
-        requests.post(url, data={"chat_id": CHAT_ID}, files=files)
+        res = requests.post(url, data={"chat_id": CHAT_ID}, files=files)
+        
+    if not res.ok:
+        raise Exception(f"Gagal mengunggah ke Telegram: {res.text}")
 
 def get_command_from_llm(user_prompt, input_file, output_file, media_type):
     if media_type == "photo":
@@ -72,11 +80,14 @@ def main():
         input_file = f"input{ext}"
         output_file = f"output{ext}"
         
+        # 1. Unduh media dari Telegram
         download_telegram_file(FILE_ID, input_file)
         
+        # 2. Dapatkan perintah dari Gemini
         command = get_command_from_llm(USER_PROMPT, input_file, output_file, MEDIA_TYPE)
         print(f"Executing command: {command}")
         
+        # 3. Eksekusi pemrosesan
         if MEDIA_TYPE == "photo":
             exec_scope = {
                 "Image": Image,
@@ -88,6 +99,7 @@ def main():
         else:
             subprocess.run(command, shell=True, check=True)
             
+        # 4. Unggah file hasil edit DULU ke Telegram
         upload_telegram_file(output_file, MEDIA_TYPE)
         send_telegram_message("✅ Selesai! Hasil edit sudah dikirim di atas.")
         
