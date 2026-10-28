@@ -49,14 +49,27 @@ def get_command_from_llm(user_prompt, input_file, output_file, media_type):
             "HANYA balaskan perintah FFmpeg murni tanpa markdown."
         )
 
-    response = client.models.generate_content(
-        model='gemini-3.8-flash',
-        contents=prompt,
-    )
-    
-    cmd = response.text.strip()
-    cmd = cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
-    return cmd
+    # Daftar model cadangan jika model utama overload (503)
+    models_to_try = [
+        'gemini-3.5-flash-lite',
+        'gemini-3.6-flash',
+        'gemini-3.1-pro'
+    ]
+
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            cmd = response.text.strip()
+            cmd = cmd.replace("```python", "").replace("```bash", "").replace("```", "").strip()
+            return cmd
+        except Exception as e:
+            print(f"Model {model_name} gagal/busy ({e}), mencoba model cadangan berikutnya...")
+            continue
+            
+    raise Exception("Semua server AI sedang sibuk. Silakan coba beberapa saat lagi.")
 
 def main():
     try:
