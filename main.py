@@ -46,45 +46,41 @@ def upload_telegram_file(file_path, media_type):
 
 import io
 
+import cv2
+import numpy as np
+from PIL import Image, ImageEnhance, ImageFilter
+
 def advanced_image_enhance(input_file, output_file, user_prompt):
-    # Gunakan Pollinations AI untuk Image-to-Image yang asli & dramatis
-    try:
-        # 1. Baca gambar asli
-        with open(input_file, "rb") as f:
-            img_bytes = f.read()
+    # 1. Baca gambar dengan OpenCV
+    img_bgr = cv2.imread(input_file)
+    if img_bgr is None:
+        raise Exception("Gagal membaca file gambar input dengan OpenCV.")
 
-        # Prompt khusus agar AI memproses ulang dengan estetika profesional
-        enhanced_prompt = (
-            f"masterpiece, professional color grading, cinematic lighting, ultra detailed 8k photo, "
-            f"natural colors, beautiful sky, high dynamic range: {user_prompt}"
-        )
-        
-        # Pollinations Image-to-Image Endpoint
-        encoded_prompt = requests.utils.quote(enhanced_prompt)
-        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1350&seed=42&model=flux"
-        
-        # Kirim request ke Pollinations
-        response = requests.post(url, files={"image": img_bytes}, timeout=45)
-        
-        if response.status_code == 200 and len(response.content) > 10000:
-            with open(output_file, "wb") as f:
-                f.write(response.content)
-            return
-        else:
-            print("Pollinations API busy, falling back to gentle Pillow enhancement...")
-    except Exception as e:
-        print(f"Error pada AI Generatif ({e}), beralih ke editan aman Pillow...")
+    # 2. Konversi ke ruang warna LAB untuk memisahkan Kecerahan (L) dan Warna (A, B)
+    lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+    l_channel, a_channel, b_channel = cv2.split(lab)
 
-    # Fallback lokal: Hanya peningkatan halus (Gentle Enhancements) agar FOTO TIDAK RUSAK
-    img = Image.open(input_file).convert("RGB")
+    # 3. Terapkan CLAHE (Contrast Limited Adaptive Histogram Equalization) pada saluran Kecerahan
+    # Ini memberikan efek HDR natural tanpa membuat area terang menjadi 'gosong'
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    cl = clahe.apply(l_channel)
+
+    # 4. Gabungkan kembali saluran warna dan konversi kembali ke BGR -> RGB
+    limg = cv2.merge((cl, a_channel, b_channel))
+    enhanced_bgr = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+    enhanced_rgb = cv2.cvtColor(enhanced_bgr, cv2.COLOR_BGR2RGB)
+
+    # 5. Konversi ke Pillow untuk penyempurnaan Saturasi & Penajaman Halus
+    img_pil = Image.fromarray(enhanced_rgb)
     
-    # Kenaikan tipis & natural (Max 15-20%)
-    img = ImageEnhance.Color(img).enhance(1.15)      # Warna sedikit lebih hidup
-    img = ImageEnhance.Contrast(img).enhance(1.08)   # Kontras tipis
-    img = ImageEnhance.Brightness(img).enhance(1.03) # Terang alami
-    img = ImageEnhance.Sharpness(img).enhance(1.2)   # Tajam halus
+    # Peningkatan saturasi warna (1.25x) agar hijau rumput & warna motor lebih hidup tapi tetap natural
+    img_pil = ImageEnhance.Color(img_pil).enhance(1.25)
     
-    img.save(output_file, quality=92, optimize=True)
+    # Penajaman halus berbasis filter detail
+    img_pil = img_pil.filter(ImageFilter.DETAIL)
+
+    # 6. Simpan hasil gambar
+    img_pil.save(output_file, quality=95, optimize=True)
 
 def get_photo_command_from_llm(user_prompt, input_file, output_file):
     # Digunakan untuk prompt biasa yang tidak mengaktifkan pipeline vivid/advanced
