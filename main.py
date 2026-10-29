@@ -44,65 +44,47 @@ def upload_telegram_file(file_path, media_type):
     if not res.ok:
         raise Exception(f"Gagal mengunggah ke Telegram: {res.text}")
 
+import io
+
 def advanced_image_enhance(input_file, output_file, user_prompt):
-    # Kami manfaatkan Gemini 2.5 Flash untuk menganalisis dan menginstruksikan modifikasi visual
-    # yang luar biasa akurat berdasarkan foto aslimu.
+    # Gunakan Pollinations AI untuk Image-to-Image yang asli & dramatis
     try:
-        img_input = Image.open(input_file).convert("RGB")
-        
-        # Kirim foto asli ke Gemini untuk mendeskripsikan ulang & mendesain modifikasi dalam resolusi tinggi
-        prompt_enhancer = (
-            "Analisislah foto ini. Sebagai editor profesional, buat skrip Python murni menggunakan Pillow yang akan: "
-            "1. Meningkatkan pencahayaan secara drastis (HDR look) dengan kurva yang cerah.\n"
-            "2. Mengubah bagian langit yang mendung menjadi biru kaya dengan awan cerah natural secara digital menggunakan manipulasi ImageEnhance dan filtering.\n"
-            "3. Meningkatkan saturasi warna tanaman hijau dan kebiruan meja/tenda secara ekstrim agar sangat cerah (vivid).\n"
-            "4. Pertahankan keaslian bentuk gelas dan bakso, namun buat detailnya sangat tajam.\n"
-            f"Gunakan file input '{input_file}' dan simpan hasilnya di '{output_file}'. "
-            "Ingat, berikan output HANYA baris kode python murni, tanpa penjelasan, tanpa ``` atau markdown."
-        )
+        # 1. Baca gambar asli
+        with open(input_file, "rb") as f:
+            img_bytes = f.read()
 
-        # Gemini 2.5 Flash memiliki kemampuan visual gila-gilaan yang gratis
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=[img_input, prompt_enhancer]
+        # Prompt khusus agar AI memproses ulang dengan estetika profesional
+        enhanced_prompt = (
+            f"masterpiece, professional color grading, cinematic lighting, ultra detailed 8k photo, "
+            f"natural colors, beautiful sky, high dynamic range: {user_prompt}"
         )
         
-        script_code = response.text.strip()
-        script_code = script_code.replace("```python", "").replace("```", "").strip()
+        # Pollinations Image-to-Image Endpoint
+        encoded_prompt = requests.utils.quote(enhanced_prompt)
+        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1350&seed=42&model=flux"
         
-        print(f"Executing AI-generated visual enhancement code: {script_code}")
+        # Kirim request ke Pollinations
+        response = requests.post(url, files={"image": img_bytes}, timeout=45)
         
-        # Eksekusi skrip grading visual hasil rekomendasi Gemini
-        exec_scope = {
-            "Image": Image,
-            "ImageEnhance": ImageEnhance,
-            "ImageFilter": ImageFilter,
-            "ImageOps": ImageOps,
-            "remove": remove
-        }
-        exec(script_code, exec_scope)
-        return
-        
+        if response.status_code == 200 and len(response.content) > 10000:
+            with open(output_file, "wb") as f:
+                f.write(response.content)
+            return
+        else:
+            print("Pollinations API busy, falling back to gentle Pillow enhancement...")
     except Exception as e:
-        print(f"Proses AI Visual gagal ({e}), menggunakan fallback manual...")
+        print(f"Error pada AI Generatif ({e}), beralih ke editan aman Pillow...")
 
-    # Fallback yang benar-benar kuat untuk memaksa warna biru dan cerah keluar
+    # Fallback lokal: Hanya peningkatan halus (Gentle Enhancements) agar FOTO TIDAK RUSAK
     img = Image.open(input_file).convert("RGB")
     
-    # Gunakan ImageOps untuk menyamakan warna & Auto-Contrast yang sangat agresif
-    img = ImageOps.autocontrast(img, cutoff=0.5)
+    # Kenaikan tipis & natural (Max 15-20%)
+    img = ImageEnhance.Color(img).enhance(1.15)      # Warna sedikit lebih hidup
+    img = ImageEnhance.Contrast(img).enhance(1.08)   # Kontras tipis
+    img = ImageEnhance.Brightness(img).enhance(1.03) # Terang alami
+    img = ImageEnhance.Sharpness(img).enhance(1.2)   # Tajam halus
     
-    # 1. Naikkan Exposure (Kecerahan)
-    img = ImageEnhance.Brightness(img).enhance(1.12)
-    
-    # 2. Naikkan warna/Saturasi gila-gilaan (memancing warna langit & tenda keluar)
-    img = ImageEnhance.Color(img).enhance(1.8)
-    
-    # 3. Kontras tajam yang seimbang (HDR)
-    img = ImageEnhance.Contrast(img).enhance(1.3)
-    img = ImageEnhance.Sharpness(img).enhance(1.9)
-    
-    img.save(output_file, quality=95, optimize=True)
+    img.save(output_file, quality=92, optimize=True)
 
 def get_photo_command_from_llm(user_prompt, input_file, output_file):
     # Digunakan untuk prompt biasa yang tidak mengaktifkan pipeline vivid/advanced
